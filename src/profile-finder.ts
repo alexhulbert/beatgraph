@@ -2,12 +2,12 @@
 import Spotify, { accessToken } from './spotify'
 import { autoPaginate, retryWrapper } from './pagination'
 import Axios from 'axios'
-import { TasteProfile } from './taste'
+import { TasteProfile, getMyTasteProfile } from './taste'
 import { getArtistSimilarity, getSimilarity, Similarity } from './similarity'
 
 const LIMIT = 5
-const LOWER_BOUND = 10_000
-const UPPER_BOUND = 100_000
+const LOWER_BOUND = 0 // 10000
+const UPPER_BOUND = 100000
 
 interface BasicProfileInfo {
   id: string
@@ -79,9 +79,9 @@ export async function findTopFollowers(
   
   const prunedFollowingUsers = followingUsers
     .filter(({ id }) => !id.includes('%')) // TODO: Fix this?
-    .filter(({ followerCount }) => {
-      followerCount < LOWER_BOUND && followerCount > UPPER_BOUND
-    })
+    .filter(({ followerCount }) =>
+      followerCount > LOWER_BOUND && followerCount < UPPER_BOUND
+    )
     .sort(_ => 0.5 - Math.random())
 
   const followingUsersWithStats: ProfileInfo[] = await Promise.all(
@@ -89,10 +89,16 @@ export async function findTopFollowers(
       type POS = SpotifyApi.PlaylistObjectSimplified
       const playlists = await autoPaginate<POS>(Spotify.getUserPlaylists as any, followingUser.id)
       const allFollowing = await retryWrapper(getUserFollowing, followingUser.id)
-      const followingArtists = filterOnlyArtists(allFollowing)
-      const followingProfiles = filterOnlyProfiles(allFollowing)
+      let followingArtists = [], followingProfiles = []
+      if (!allFollowing) {
+        console.warn('COULDNT CALL FOLLOWING API FOR USER ' + followingUser.id)
+      } else {
+        followingArtists = filterOnlyArtists(allFollowing)
+        followingProfiles = filterOnlyProfiles(allFollowing)
+      }
       const playlistIds = playlists.map(p => p.id)
       const playlistFollowers = playlists.reduce((acc, next) => acc + next.tracks.total, 0)
+      console.log('!!!')
       return {
         ...followingUser,
         playlistIds,
@@ -103,6 +109,7 @@ export async function findTopFollowers(
     })
   )
 
+  console.log('GOT HERE')
   const topUsers = followingUsersWithStats
     .sort((a, b) => {
       const artistSimilarityA = getArtistSimilarity(myTasteProfile, a)
@@ -121,3 +128,9 @@ export async function findTopFollowers(
     })
    )
 }
+
+(async function() {
+  const tasteProfile = await getMyTasteProfile()
+  const results = await findTopFollowers(tasteProfile, 'joekayxsoulection')
+  console.log(results)
+})()

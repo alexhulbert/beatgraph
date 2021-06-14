@@ -1,47 +1,77 @@
-import { SavedTracksArtistIDs, getMySavedTracksArtistIDs } from './tbd'
-import { ProfileInfo } from './tree-builder'
+import { ProfileInfo } from './profile-finder'
 import { autoPaginate } from './pagination'
 import fs from 'fs'
-import Spotify from './main'
+import Spotify from './spotify'
+import { TasteProfile, getMyTasteProfile } from './taste'
 
-interface playListSimilarity { 
-    playlistId: string,
-    playlistSimilarityScore: number,
+interface playlistSimilarity { 
+  playlistId: string,
+  playlistSimilarityScore: number,
 }
 
-interface Similarity {
-    playListSimilarityScores: playListSimilarity[],
-    cumalitveSimilarityScore: number,
+export interface Similarity {
+  playlistSimilarityScores: playlistSimilarity[],
+  totalSimilarityScore: number,
+  artistSimilarityScore: number,
 }
 
 function intersectionSize(x: any[], y: any[]) : number { 
-    return x.filter(value => y.includes(value)).length
+  return x.filter(value => y.includes(value)).length
 }
 
 function similarityScore(x: any[], y: any[]) {
-    return intersectionSize(x, y)
+  return intersectionSize(x, y)
 }
 
-async function getSimilarity(userSavedInfo: SavedTracksArtistIDs, profileInfo: ProfileInfo) {
-    let similarity = { playListSimilarityScores: [], cumalitveSimilarityScore: 0 }
-    const promises = profileInfo.playlistIds.map(async (playlistId) => {
-        const playlist = await autoPaginate<SpotifyApi.PlaylistTrackObject>(Spotify.getPlaylistTracks as any, playlistId)
-        const playListTrackIds = playlist.map(item => item.track.id) 
-        const playListTrackArtistIds = playlist
-            .map(item => (item.track as any).artists.map(artist => artist.id))
-            .flat()
-        similarity.playListSimilarityScores
-            .push(similarityScore(userSavedInfo.trackIDs, playListTrackIds) + similarityScore(userSavedInfo.artistIDs, playListTrackArtistIds)) 
-    })
-    await Promise.all(promises)
-    similarity.cumalitveSimilarityScore = similarity.playListSimilarityScores.reduce((x, y) => x + y, 0) 
-    return similarity
+export function getArtistSimilarity(
+  myTasteProfile: TasteProfile, 
+  userProfile: ProfileInfo
+) {
+  return similarityScore(
+    myTasteProfile.artistIds, 
+    userProfile.followingArtists
+  )
+}
+
+export async function getSimilarity(
+  userTaste: TasteProfile, 
+  userProfile: ProfileInfo
+) {
+  let similarity: Similarity = { 
+    playlistSimilarityScores: [], 
+    totalSimilarityScore: 0, 
+    artistSimilarityScore: 0
+  }
+
+  const promises = userProfile.playlistIds.map(async (playlistId) => {
+    const playlist = await autoPaginate<SpotifyApi.PlaylistTrackObject>(
+      Spotify.getPlaylistTracks as any, playlistId)
+    const playlistTrackIds = playlist.map(item => item.track.id) 
+    const playlistTrackArtistIds = (playlist as any)
+      .map(({ track }) => track.artists)
+      .map(artists => artists.map(artist => artist.id))
+      .flat()
+    similarity.playlistSimilarityScores
+      .push({
+        playlistId,
+        playlistSimilarityScore: 
+          similarityScore(userTaste.trackIds, playlistTrackIds) + 
+          similarityScore(userTaste.artistIds, playlistTrackArtistIds)
+      })
+  })
+  await Promise.all(promises)
+
+  similarity.artistSimilarityScore = getArtistSimilarity(userTaste, userProfile) 
+  similarity.totalSimilarityScore = similarity.playlistSimilarityScores
+    .reduce((x, y) => x + y.playlistSimilarityScore, 0) 
+
+  return similarity
 }
 
 async function blah() {
-    const userSavedInfo = await getMySavedTracksArtistIDs()
-    fs.readFileSync('profile.json')
-    console.log(await getSimilarity(userSavedInfo, JSON.parse(fs.readFileSync('profile6.json').toString())))
+  const userSavedInfo = await getMyTasteProfile()
+  // fs.readFileSync('profile.json')
+  console.log(await getSimilarity(userSavedInfo, JSON.parse(fs.readFileSync('profiles/profile6.json').toString())))
 }
 
 blah()

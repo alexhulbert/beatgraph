@@ -1,4 +1,4 @@
-import Spotify from './main'
+import Spotify from './spotify'
 
 interface PagingObject<T> {
   href: string;
@@ -15,7 +15,8 @@ const LIMIT = 50
 export async function autoPaginate<T>(fn: (...args: any) => Promise<{ items: T }>, ...args: any[]): Promise<T[]> {
   // TODO: Pagination
   const firstResult = await apHelper(fn, 0, ...args)
-  const promises = Array(Math.ceil((firstResult.total - LIMIT) / LIMIT)).fill(0).map((_, i) => {
+  const pagesLeft = Math.max(0, Math.ceil((firstResult.total - LIMIT) / LIMIT))
+  const promises = Array(pagesLeft).fill(0).map((_, i) => {
     const offset = (i + 1) * LIMIT
     return apHelper(fn, offset, ...args)
   })
@@ -37,7 +38,7 @@ async function helper<T>(fn: (...args: any[]) => T, tries, ...args: any[]): Prom
   try {
     return await fn(...args)
   } catch(e) {
-    await sleep(5)
+    await sleep(1)
     return tries ? await helper(fn, tries - 1, ...args) : undefined
   }
 }
